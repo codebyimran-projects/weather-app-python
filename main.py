@@ -1,6 +1,5 @@
 import tkinter as tk
 from tkinter import ttk
-from PIL import Image, ImageTk  # For weather icons
 import requests
 import os
 from dotenv import load_dotenv
@@ -31,43 +30,46 @@ def get_weather():
             humidity = data["main"]["humidity"]
             desc = data["weather"][0]["description"]
             wind = data["wind"]["speed"]
-            weather_main = data["weather"][0]["main"]
+            weather_main = data["weather"][0]["main"].lower()
 
             city_name_label.config(text=city.title())
             description.config(text=desc.capitalize())
             temperature.config(text=f"{temp}°C")
             extra_info.config(text=f"Humidity: {humidity}%\nWind: {wind} km/h")
 
-            # Set dynamic weather icon
-            if weather_main.lower() in ["clear"]:
-                icon_label.config(image=sun_icon)
-                weather_card.configure(bg="#facc15")  # sunny yellow background
-            elif weather_main.lower() in ["clouds"]:
-                icon_label.config(image=cloud_icon)
-                weather_card.configure(bg="#64748b")  # grayish clouds
-            elif weather_main.lower() in ["rain", "drizzle"]:
-                icon_label.config(image=rain_icon)
-                weather_card.configure(bg="#0ea5e9")  # blue rain
-            elif weather_main.lower() in ["snow"]:
-                icon_label.config(image=snow_icon)
-                weather_card.configure(bg="#e0f2fe")  # light blue snow
+            # Emoji icons based on weather
+            if "clear" in weather_main:
+                emoji_label.config(text="☀️")
+                weather_card.config(bg="#facc15")  # sunny yellow
+            elif "cloud" in weather_main:
+                emoji_label.config(text="☁️")
+                weather_card.config(bg="#64748b")  # gray clouds
+            elif "rain" in weather_main or "drizzle" in weather_main:
+                emoji_label.config(text="🌧️")
+                weather_card.config(bg="#0ea5e9")  # rain blue
+            elif "snow" in weather_main:
+                emoji_label.config(text="❄️")
+                weather_card.config(bg="#e0f2fe")  # light blue snow
+            elif "storm" in weather_main or "thunder" in weather_main:
+                emoji_label.config(text="⛈️")
+                weather_card.config(bg="#f87171")  # storm red
             else:
-                icon_label.config(image=default_icon)
-                weather_card.configure(bg="#1e293b")
+                emoji_label.config(text="🌈")
+                weather_card.config(bg="#1e293b")
 
         else:
             description.config(text="City not found")
             temperature.config(text="--")
             extra_info.config(text="")
-            icon_label.config(image=default_icon)
-            weather_card.configure(bg="#1e293b")
+            emoji_label.config(text="❓")
+            weather_card.config(bg="#1e293b")
 
     except Exception as e:
         description.config(text="Error fetching data")
         temperature.config(text="--")
         extra_info.config(text="")
-        icon_label.config(image=default_icon)
-        weather_card.configure(bg="#1e293b")
+        emoji_label.config(text="❌")
+        weather_card.config(bg="#1e293b")
 
 # =========================
 # Main Window
@@ -144,18 +146,14 @@ tk.Button(
 weather_card = tk.Frame(win, bg="#1e293b")
 weather_card.pack(pady=20, padx=30, fill="both", expand=True)
 
-# Weather Icon
-# Load small icons from local or online
-# Make sure to have PNGs in same folder: sun.png, cloud.png, rain.png, snow.png, default.png
-sun_icon = ImageTk.PhotoImage(Image.open("sun.png").resize((100,100)))
-cloud_icon = ImageTk.PhotoImage(Image.open("cloud.png").resize((100,100)))
-rain_icon = ImageTk.PhotoImage(Image.open("rain.png").resize((100,100)))
-snow_icon = ImageTk.PhotoImage(Image.open("snow.png").resize((100,100)))
-default_icon = ImageTk.PhotoImage(Image.open("default.png").resize((100,100)))
-
-icon_label = tk.Label(weather_card, bg="#1e293b")
-icon_label.pack(pady=15)
-icon_label.config(image=sun_icon)  # default icon
+# Emoji label
+emoji_label = tk.Label(
+    weather_card,
+    text="☀️",
+    font=("Segoe UI", 72),
+    bg="#1e293b"
+)
+emoji_label.pack(pady=15)
 
 city_name_label = tk.Label(
     weather_card,
@@ -164,7 +162,7 @@ city_name_label = tk.Label(
     fg="#38bdf8",
     bg="#1e293b"
 )
-city_name_label.pack(pady=(5, 5))
+city_name_label.pack(pady=(5,5))
 
 description = tk.Label(
     weather_card,
