@@ -1,435 +1,523 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import requests
+import json
+from datetime import datetime
+from PIL import Image, ImageTk
+import io
 import os
 from dotenv import load_dotenv
-from datetime import datetime
-import json
 import threading
 
-# Load environment variables
+# =========================
+# CONFIGURATION
+# =========================
 load_dotenv()
-API_KEY = os.getenv("API_KEY")
+API_KEY = os.getenv("api_key")
 BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
 
-# =========================
-# Weather Function with Error Handling
-# =========================
-def get_weather(event=None):
-    city = city_var.get().strip()
-    if not city:
-        messagebox.showwarning("Input Error", "Please enter a city name")
-        return
-    
-    # Show loading state
-    loading_label.pack(pady=10)
-    search_btn.config(state="disabled", text="Loading...")
-    win.update()
-    
-    params = {
-        "q": city,
-        "appid": API_KEY,
-        "units": "metric"
-    }
+# Predefined cities
+CITIES = [
+    "Karachi", "Lahore", "Islamabad", "Rawalpindi", "Faisalabad",
+    "Multan", "Peshawar", "Quetta", "Sialkot", "Gujranwala",
+    "London", "New York", "Tokyo", "Paris", "Dubai",
+    "Sydney", "Mumbai", "Toronto", "Berlin", "Singapore"
+]
 
-    try:
-        response = requests.get(BASE_URL, params=params, timeout=10)
-        data = response.json()
+# Weather icons mapping
+WEATHER_ICONS = {
+    "clear": "☀️",
+    "clouds": "☁️",
+    "rain": "🌧️",
+    "drizzle": "🌦️",
+    "thunderstorm": "⛈️",
+    "snow": "❄️",
+    "mist": "🌫️",
+    "smoke": "💨",
+    "haze": "😶‍🌫️",
+    "dust": "💨",
+    "fog": "🌁",
+    "sand": "🌪️",
+    "ash": "🌋",
+    "squall": "💨",
+    "tornado": "🌪️"
+}
 
-        if response.status_code == 200:
+# Color themes for different weather conditions
+COLOR_THEMES = {
+    "clear": {"bg": "#FFD700", "fg": "#000000", "accent": "#FF8C00"},
+    "clouds": {"bg": "#87CEEB", "fg": "#FFFFFF", "accent": "#4682B4"},
+    "rain": {"bg": "#4169E1", "fg": "#FFFFFF", "accent": "#1E90FF"},
+    "drizzle": {"bg": "#B0E0E6", "fg": "#2F4F4F", "accent": "#5F9EA0"},
+    "thunderstorm": {"bg": "#483D8B", "fg": "#FFFFFF", "accent": "#8A2BE2"},
+    "snow": {"bg": "#F0F8FF", "fg": "#000000", "accent": "#B0C4DE"},
+    "default": {"bg": "#1E3A8A", "fg": "#FFFFFF", "accent": "#3B82F6"}
+}
+
+class WeatherApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Weather App | Code by Imran")
+        self.root.geometry("450x700")
+        self.root.resizable(False, False)
+        self.root.configure(bg="#0F172A")
+        
+        # Center window
+        self.center_window()
+        
+        # Current theme
+        self.current_theme = COLOR_THEMES["default"]
+        
+        # Recent searches
+        self.recent_searches = ["Karachi", "Lahore", "Islamabad"]
+        
+        # Setup UI
+        self.setup_ui()
+        
+        # Load default city weather
+        self.root.after(500, lambda: self.fetch_weather("Karachi"))
+
+    def center_window(self):
+        """Center the window on screen"""
+        self.root.update_idletasks()
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f'{width}x{height}+{x}+{y}')
+
+    def setup_ui(self):
+        """Setup all UI components"""
+        # Main container
+        self.main_frame = tk.Frame(self.root, bg="#0F172A")
+        self.main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Header
+        self.create_header()
+        
+        # Search Section
+        self.create_search_section()
+        
+        # Weather Display
+        self.create_weather_display()
+        
+        # Details Section
+        self.create_details_section()
+        
+        # Footer
+        self.create_footer()
+
+    def create_header(self):
+        """Create header section"""
+        header_frame = tk.Frame(self.main_frame, bg="#0F172A")
+        header_frame.pack(fill="x", pady=(0, 20))
+        
+        # Title
+        title_label = tk.Label(
+            header_frame,
+            text="🌤️ Weather Master",
+            font=("Arial", 24, "bold"),
+            fg="#FFFFFF",
+            bg="#0F172A"
+        )
+        title_label.pack(anchor="w")
+        
+        # Subtitle
+        subtitle_label = tk.Label(
+            header_frame,
+            text="Real-time weather updates",
+            font=("Arial", 10),
+            fg="#94A3B8",
+            bg="#0F172A"
+        )
+        subtitle_label.pack(anchor="w", pady=(2, 0))
+
+    def create_search_section(self):
+        """Create search section"""
+        search_frame = tk.Frame(self.main_frame, bg="#1E293B", relief="flat", bd=1)
+        search_frame.pack(fill="x", pady=(0, 20))
+        
+        # Search label
+        tk.Label(
+            search_frame,
+            text="Search City",
+            font=("Arial", 11, "bold"),
+            fg="#E2E8F0",
+            bg="#1E293B"
+        ).pack(anchor="w", padx=15, pady=(12, 5))
+        
+        # Search input with dropdown
+        self.city_var = tk.StringVar()
+        self.city_combo = ttk.Combobox(
+            search_frame,
+            textvariable=self.city_var,
+            values=CITIES,
+            font=("Arial", 12),
+            state="normal",
+            height=15
+        )
+        self.city_combo.pack(fill="x", padx=15, pady=5, ipady=8)
+        self.city_combo.set("Karachi")
+        self.city_combo.bind('<Return>', lambda e: self.on_search())
+        
+        # Button frame
+        button_frame = tk.Frame(search_frame, bg="#1E293B")
+        button_frame.pack(fill="x", padx=15, pady=(5, 15))
+        
+        # Recent searches button
+        recent_btn = tk.Button(
+            button_frame,
+            text="🕐 Recent",
+            font=("Arial", 10),
+            bg="#334155",
+            fg="#E2E8F0",
+            relief="flat",
+            cursor="hand2",
+            command=self.show_recent_menu
+        )
+        recent_btn.pack(side="left", padx=(0, 10))
+        
+        # Search button
+        self.search_btn = tk.Button(
+            button_frame,
+            text="🔍 Search Weather",
+            font=("Arial", 11, "bold"),
+            bg="#3B82F6",
+            fg="#FFFFFF",
+            relief="flat",
+            cursor="hand2",
+            command=self.on_search
+        )
+        self.search_btn.pack(side="right", ipadx=20, ipady=6)
+        
+        # Bind hover effects
+        recent_btn.bind("<Enter>", lambda e: recent_btn.config(bg="#475569"))
+        recent_btn.bind("<Leave>", lambda e: recent_btn.config(bg="#334155"))
+        self.search_btn.bind("<Enter>", lambda e: self.search_btn.config(bg="#2563EB"))
+        self.search_btn.bind("<Leave>", lambda e: self.search_btn.config(bg="#3B82F6"))
+
+    def create_weather_display(self):
+        """Create weather display section"""
+        self.weather_frame = tk.Frame(self.main_frame, bg=self.current_theme["bg"], relief="flat", bd=1)
+        self.weather_frame.pack(fill="x", pady=(0, 20))
+        
+        # City name
+        self.city_label = tk.Label(
+            self.weather_frame,
+            text="--",
+            font=("Arial", 18, "bold"),
+            fg=self.current_theme["fg"],
+            bg=self.current_theme["bg"]
+        )
+        self.city_label.pack(pady=(20, 5))
+        
+        # Weather icon
+        self.weather_icon = tk.Label(
+            self.weather_frame,
+            text="⏳",
+            font=("Arial", 60),
+            fg=self.current_theme["fg"],
+            bg=self.current_theme["bg"]
+        )
+        self.weather_icon.pack(pady=10)
+        
+        # Temperature
+        self.temp_label = tk.Label(
+            self.weather_frame,
+            text="--°C",
+            font=("Arial", 48, "bold"),
+            fg=self.current_theme["fg"],
+            bg=self.current_theme["bg"]
+        )
+        self.temp_label.pack(pady=5)
+        
+        # Description
+        self.desc_label = tk.Label(
+            self.weather_frame,
+            text="Fetching weather...",
+            font=("Arial", 14),
+            fg=self.current_theme["fg"],
+            bg=self.current_theme["bg"]
+        )
+        self.desc_label.pack(pady=(5, 20))
+
+    def create_details_section(self):
+        """Create weather details section"""
+        details_frame = tk.Frame(self.main_frame, bg="#1E293B", relief="flat", bd=1)
+        details_frame.pack(fill="x", pady=(0, 20))
+        
+        # Title
+        tk.Label(
+            details_frame,
+            text="📊 Weather Details",
+            font=("Arial", 12, "bold"),
+            fg="#E2E8F0",
+            bg="#1E293B"
+        ).pack(anchor="w", padx=15, pady=(12, 10))
+        
+        # Details grid
+        grid_frame = tk.Frame(details_frame, bg="#1E293B")
+        grid_frame.pack(fill="x", padx=15, pady=(0, 15))
+        
+        # Row 1
+        row1 = tk.Frame(grid_frame, bg="#1E293B")
+        row1.pack(fill="x", pady=5)
+        
+        self.feels_like_label = self.create_detail_item(row1, "🌡️ Feels Like", "--°C")
+        self.humidity_label = self.create_detail_item(row1, "💧 Humidity", "--%")
+        
+        # Row 2
+        row2 = tk.Frame(grid_frame, bg="#1E293B")
+        row2.pack(fill="x", pady=5)
+        
+        self.wind_label = self.create_detail_item(row2, "💨 Wind", "-- km/h")
+        self.pressure_label = self.create_detail_item(row2, "📊 Pressure", "-- hPa")
+        
+        # Row 3
+        row3 = tk.Frame(grid_frame, bg="#1E293B")
+        row3.pack(fill="x", pady=5)
+        
+        self.visibility_label = self.create_detail_item(row3, "👁️ Visibility", "-- km")
+        self.clouds_label = self.create_detail_item(row3, "☁️ Clouds", "--%")
+
+    def create_detail_item(self, parent, title, value):
+        """Create a detail item with title and value"""
+        item_frame = tk.Frame(parent, bg="#1E293B")
+        item_frame.pack(side="left", expand=True, fill="x")
+        
+        # Title
+        tk.Label(
+            item_frame,
+            text=title,
+            font=("Arial", 9),
+            fg="#94A3B8",
+            bg="#1E293B"
+        ).pack(anchor="w")
+        
+        # Value
+        value_label = tk.Label(
+            item_frame,
+            text=value,
+            font=("Arial", 11, "bold"),
+            fg="#FFFFFF",
+            bg="#1E293B"
+        )
+        value_label.pack(anchor="w", pady=(2, 0))
+        
+        return value_label
+
+    def create_footer(self):
+        """Create footer section"""
+        footer_frame = tk.Frame(self.main_frame, bg="#0F172A")
+        footer_frame.pack(fill="x", pady=(10, 0))
+        
+        # Status
+        self.status_label = tk.Label(
+            footer_frame,
+            text="🟢 Ready",
+            font=("Arial", 9),
+            fg="#94A3B8",
+            bg="#0F172A"
+        )
+        self.status_label.pack(side="left")
+        
+        # Copyright
+        tk.Label(
+            footer_frame,
+            text="Made with ❤️ by Imran",
+            font=("Arial", 9),
+            fg="#64748B",
+            bg="#0F172A"
+        ).pack(side="right")
+
+    def on_search(self):
+        """Handle search button click"""
+        city = self.city_var.get().strip()
+        if not city:
+            messagebox.showwarning("Input Required", "Please enter a city name.")
+            return
+        
+        # Start search in thread
+        threading.Thread(target=self.fetch_weather, args=(city,), daemon=True).start()
+        
+        # Update UI
+        self.search_btn.config(state="disabled", text="Searching...")
+        self.status_label.config(text="🟡 Fetching weather data...")
+
+    def fetch_weather(self, city):
+        """Fetch weather data from API"""
+        try:
+            # API request
+            params = {
+                "q": city,
+                "appid": API_KEY,
+                "units": "metric"
+            }
+            
+            response = requests.get(BASE_URL, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                self.root.after(0, lambda: self.update_ui(data))
+                
+                # Add to recent searches
+                if city not in self.recent_searches:
+                    self.recent_searches.insert(0, city)
+                    if len(self.recent_searches) > 5:
+                        self.recent_searches.pop()
+            else:
+                error_msg = "City not found" if response.status_code == 404 else "API Error"
+                self.root.after(0, lambda: self.show_error(error_msg))
+                
+        except requests.exceptions.ConnectionError:
+            self.root.after(0, lambda: self.show_error("No internet connection"))
+        except requests.exceptions.Timeout:
+            self.root.after(0, lambda: self.show_error("Request timeout"))
+        except Exception as e:
+            self.root.after(0, lambda: self.show_error(f"Error: {str(e)}"))
+        finally:
+            self.root.after(0, self.reset_search_button)
+
+    def update_ui(self, data):
+        """Update UI with weather data"""
+        try:
             # Extract data
-            temp = data["main"]["temp"]
-            feels_like = data["main"]["feels_like"]
-            humidity = data["main"]["humidity"]
-            pressure = data["main"]["pressure"]
-            temp_min = data["main"]["temp_min"]
-            temp_max = data["main"]["temp_max"]
-            desc = data["weather"][0]["description"]
-            wind = data["wind"]["speed"]
-            weather_main = data["weather"][0]["main"].lower()
-            
-            # Get country and time
+            city = data.get("name", "Unknown")
             country = data.get("sys", {}).get("country", "")
-            sunrise = datetime.fromtimestamp(data["sys"]["sunrise"]).strftime('%I:%M %p')
-            sunset = datetime.fromtimestamp(data["sys"]["sunset"]).strftime('%I:%M %p')
+            temp = data.get("main", {}).get("temp", 0)
+            feels_like = data.get("main", {}).get("feels_like", 0)
+            humidity = data.get("main", {}).get("humidity", 0)
+            pressure = data.get("main", {}).get("pressure", 0)
+            wind_speed = data.get("wind", {}).get("speed", 0)
+            visibility = data.get("visibility", 0)
+            clouds = data.get("clouds", {}).get("all", 0)
+            weather_desc = data.get("weather", [{}])[0].get("description", "").title()
+            weather_main = data.get("weather", [{}])[0].get("main", "").lower()
             
-            # Update UI
-            city_name_label.config(text=f"{city.title()}, {country}" if country else city.title())
-            description.config(text=desc.capitalize())
-            temperature.config(text=f"{temp:.1f}°C")
-            feels_like_label.config(text=f"Feels like: {feels_like:.1f}°C")
+            # Update theme based on weather
+            self.update_theme(weather_main)
             
-            # Update detailed info
-            details_text = f"""
-            ⚡ Min/Max: {temp_min:.1f}°C / {temp_max:.1f}°C
-            💧 Humidity: {humidity}%
-            💨 Wind: {wind} km/h
-            📊 Pressure: {pressure} hPa
-            🌅 Sunrise: {sunrise}
-            🌇 Sunset: {sunset}
-            """
-            extra_info.config(text=details_text.strip())
+            # Update city label
+            self.city_label.config(text=f"{city}, {country}" if country else city)
             
-            # Update weather icon and colors
-            update_weather_theme(weather_main)
+            # Update weather icon
+            icon = WEATHER_ICONS.get(weather_main, "🌈")
+            self.weather_icon.config(text=icon)
             
-            # Add to recent searches
-            if city.title() not in recent_searches:
-                recent_searches.insert(0, city.title())
-                if len(recent_searches) > 5:
-                    recent_searches.pop()
-                recent_menu['menu'].delete(0, 'end')
-                for search in recent_searches:
-                    recent_menu['menu'].add_command(label=search, 
-                                                   command=lambda s=search: set_city(s))
+            # Update temperature
+            self.temp_label.config(text=f"{temp:.1f}°C")
             
-            # Save to history
-            save_to_history(city, temp, desc)
+            # Update description
+            self.desc_label.config(text=weather_desc)
+            
+            # Update details
+            self.feels_like_label.config(text=f"{feels_like:.1f}°C")
+            self.humidity_label.config(text=f"{humidity}%")
+            self.wind_label.config(text=f"{wind_speed} km/h")
+            self.pressure_label.config(text=f"{pressure} hPa")
+            self.visibility_label.config(text=f"{visibility/1000:.1f} km" if visibility else "-- km")
+            self.clouds_label.config(text=f"{clouds}%")
+            
+            # Update status
+            self.status_label.config(text=f"🟢 Updated: {datetime.now().strftime('%H:%M:%S')}")
+            
+            # Update weather frame background
+            self.weather_frame.config(bg=self.current_theme["bg"])
+            
+            # Update all widgets in weather frame
+            for widget in self.weather_frame.winfo_children():
+                widget.config(bg=self.current_theme["bg"], fg=self.current_theme["fg"])
+            
+        except Exception as e:
+            self.show_error(f"Error updating UI: {str(e)}")
 
-        else:
-            messagebox.showerror("Error", f"City not found: {city}")
-            description.config(text="City not found")
-            temperature.config(text="--")
-            feels_like_label.config(text="")
-            extra_info.config(text="")
-            update_weather_theme("unknown")
+    def update_theme(self, weather_main):
+        """Update color theme based on weather"""
+        # Find matching theme
+        for key in COLOR_THEMES:
+            if key in weather_main:
+                self.current_theme = COLOR_THEMES[key]
+                return
+        
+        # Use default if no match
+        self.current_theme = COLOR_THEMES["default"]
 
-    except requests.exceptions.Timeout:
-        messagebox.showerror("Error", "Request timeout. Please try again.")
-    except requests.exceptions.ConnectionError:
-        messagebox.showerror("Error", "No internet connection.")
-    except Exception as e:
-        messagebox.showerror("Error", f"An error occurred: {str(e)}")
-    finally:
-        # Hide loading state
-        loading_label.pack_forget()
-        search_btn.config(state="normal", text="Get Weather")
+    def show_recent_menu(self):
+        """Show recent searches menu"""
+        if not self.recent_searches:
+            messagebox.showinfo("Recent Searches", "No recent searches found.")
+            return
+        
+        # Create menu
+        menu = tk.Menu(self.root, tearoff=0)
+        for city in self.recent_searches:
+            menu.add_command(
+                label=city,
+                command=lambda c=city: self.select_recent_city(c)
+            )
+        
+        # Show menu
+        try:
+            menu.tk_popup(
+                self.search_btn.winfo_rootx(),
+                self.search_btn.winfo_rooty() + self.search_btn.winfo_height()
+            )
+        finally:
+            menu.grab_release()
 
-def update_weather_theme(weather_main):
-    """Update colors and emoji based on weather condition"""
-    weather_icons = {
-        "clear": ("☀️", "#FBBF24", "#F59E0B"),
-        "cloud": ("☁️", "#94A3B8", "#64748B"),
-        "rain": ("🌧️", "#60A5FA", "#3B82F6"),
-        "drizzle": ("🌦️", "#38BDF8", "#0EA5E9"),
-        "snow": ("❄️", "#BAE6FD", "#7DD3FC"),
-        "storm": ("⛈️", "#F87171", "#DC2626"),
-        "thunder": ("⚡", "#FBBF24", "#F59E0B"),
-        "mist": ("🌫️", "#A5B4FC", "#818CF8"),
-        "fog": ("🌁", "#CBD5E1", "#94A3B8"),
-        "haze": ("😶‍🌫️", "#FDE68A", "#FCD34D")
-    }
-    
-    # Find matching weather condition
-    icon, color1, color2 = "🌈", "#8B5CF6", "#7C3AED"  # Default purple
-    
-    for key in weather_icons:
-        if key in weather_main:
-            icon, color1, color2 = weather_icons[key]
-            break
-    
-    # Update UI elements
-    emoji_label.config(text=icon)
-    weather_card.config(bg=color1)
-    
-    # Update all child widgets
-    for widget in weather_card.winfo_children():
-        widget.config(bg=color1)
-    
-    # Special config for specific widgets
-    city_name_label.config(bg=color1, fg="#1E293B")
-    description.config(bg=color1, fg="#374151")
-    temperature.config(bg=color1, fg="#111827")
-    feels_like_label.config(bg=color1, fg="#4B5563")
-    extra_info.config(bg=color1, fg="#374151")
-    
-    # Add gradient effect
-    weather_card.config(highlightbackground=color2, highlightthickness=2)
+    def select_recent_city(self, city):
+        """Select city from recent searches"""
+        self.city_var.set(city)
+        self.fetch_weather(city)
 
-def set_city(city):
-    """Set city from recent searches"""
-    city_var.set(city)
-    get_weather()
+    def show_error(self, message):
+        """Show error message"""
+        messagebox.showerror("Error", message)
+        
+        # Reset UI to default
+        self.city_label.config(text="--")
+        self.weather_icon.config(text="❓")
+        self.temp_label.config(text="--°C")
+        self.desc_label.config(text="Error loading data")
+        
+        # Reset details
+        self.feels_like_label.config(text="--°C")
+        self.humidity_label.config(text="--%")
+        self.wind_label.config(text="-- km/h")
+        self.pressure_label.config(text="-- hPa")
+        self.visibility_label.config(text="-- km")
+        self.clouds_label.config(text="--%")
+        
+        self.status_label.config(text="🔴 Error occurred")
 
-def save_to_history(city, temp, desc):
-    """Save weather data to history file"""
+    def reset_search_button(self):
+        """Reset search button state"""
+        self.search_btn.config(state="normal", text="🔍 Search Weather")
+
+def main():
+    """Main function"""
+    # Check API key
+    if API_KEY == "your_api_key_here":
+        response = messagebox.askyesno(
+            "API Key Required",
+            "You need an OpenWeather API key.\n\n"
+            "1. Sign up at https://home.openweathermap.org/users/sign_up\n"
+            "2. Get your API key\n"
+            "3. Create a .env file with: OPENWEATHER_API_KEY=your_key\n\n"
+            "Do you want to continue anyway?"
+        )
+        
+        if not response:
+            return
+    
+    # Create and run app
+    root = tk.Tk()
+    app = WeatherApp(root)
+    
     try:
-        history_file = "weather_history.json"
-        history = []
-        
-        if os.path.exists(history_file):
-            with open(history_file, 'r') as f:
-                history = json.load(f)
-        
-        history.append({
-            "city": city,
-            "temperature": temp,
-            "description": desc,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        })
-        
-        # Keep only last 50 entries
-        history = history[-50:]
-        
-        with open(history_file, 'w') as f:
-            json.dump(history, f, indent=2)
-            
-    except Exception as e:
-        print(f"Error saving history: {e}")
-
-def on_enter(e):
-    """Button hover effect"""
-    e.widget.config(bg="#0EA5E9")
-
-def on_leave(e):
-    """Button leave effect"""
-    e.widget.config(bg="#38BDF8")
-
-# =========================
-# Main Window
-# =========================
-win = tk.Tk()
-win.geometry("500x850")
-win.title("Weather App | Code by Imran")
-win.configure(bg="#0F172A")
-win.resizable(False, False)
-
-# Make window center screen
-win.update_idletasks()
-width = win.winfo_width()
-height = win.winfo_height()
-x = (win.winfo_screenwidth() // 2) - (width // 2)
-y = (win.winfo_screenheight() // 2) - (height // 2)
-win.geometry(f'{width}x{height}+{x}+{y}')
-
-# =========================
-# Header with Gradient
-# =========================
-header_frame = tk.Frame(win, bg="#0F172A")
-header_frame.pack(pady=(20, 10))
-
-# Title with gradient effect
-title_label = tk.Label(
-    header_frame,
-    text="🌤️ Weather Dashboard",
-    font=("Segoe UI", 32, "bold"),
-    fg="#38BDF8",
-    bg="#0F172A"
-)
-title_label.pack()
-
-subtitle_label = tk.Label(
-    header_frame,
-    text="Real-time weather updates • Powered by OpenWeather",
-    font=("Segoe UI", 11),
-    fg="#94A3B8",
-    bg="#0F172A"
-)
-subtitle_label.pack(pady=(5, 15))
-
-# =========================
-# Search Card
-# =========================
-search_card = tk.Frame(win, bg="#1E293B", bd=2, relief="ridge")
-search_card.pack(pady=15, padx=30, fill="x")
-
-search_label = tk.Label(
-    search_card,
-    text="📍 Enter City Name",
-    font=("Segoe UI", 12, "bold"),
-    fg="#E2E8F0",
-    bg="#1E293B"
-)
-search_label.pack(anchor="w", padx=20, pady=(20, 5))
-
-# City input with dropdown
-cities = ["Karachi", "Lahore", "Islamabad", "Delhi", "London", "New York", 
-          "Tokyo", "Paris", "Dubai", "Sydney", "Mumbai", "Toronto"]
-recent_searches = ["Karachi", "Lahore", "Islamabad"]
-
-city_var = tk.StringVar(value="Karachi")
-
-# Create input frame
-input_frame = tk.Frame(search_card, bg="#1E293B")
-input_frame.pack(padx=20, pady=10, fill="x")
-
-city_entry = ttk.Combobox(
-    input_frame,
-    textvariable=city_var,
-    values=cities,
-    font=("Segoe UI", 13),
-    state="normal",
-    height=8
-)
-city_entry.pack(side="left", fill="x", expand=True, ipady=8)
-city_entry.bind('<Return>', get_weather)
-
-# Recent searches label
-recent_label = tk.Label(
-    search_card,
-    text="Recent Searches:",
-    font=("Segoe UI", 10),
-    fg="#94A3B8",
-    bg="#1E293B"
-)
-recent_label.pack(anchor="w", padx=20, pady=(5, 0))
-
-# Recent searches menu
-recent_menu = ttk.Menubutton(
-    search_card,
-    text="Select Recent",
-    direction="below"
-)
-recent_menu.pack(anchor="w", padx=20, pady=5)
-
-recent_menu.menu = tk.Menu(recent_menu, tearoff=0)
-recent_menu["menu"] = recent_menu.menu
-
-for city in recent_searches:
-    recent_menu.menu.add_command(label=city, 
-                                command=lambda s=city: set_city(s))
-
-# Get Weather Button with hover effect
-search_btn = tk.Button(
-    search_card,
-    text="Get Weather",
-    font=("Segoe UI", 14, "bold"),
-    bg="#38BDF8",
-    fg="#0F172A",
-    bd=0,
-    padx=30,
-    cursor="hand2",
-    command=get_weather
-)
-search_btn.pack(pady=(10, 20), ipady=12)
-search_btn.bind("<Enter>", on_enter)
-search_btn.bind("<Leave>", on_leave)
-
-# Loading indicator
-loading_label = tk.Label(
-    search_card,
-    text="⏳ Loading weather data...",
-    font=("Segoe UI", 10, "italic"),
-    fg="#94A3B8",
-    bg="#1E293B"
-)
-
-# =========================
-# Weather Card
-# =========================
-weather_card = tk.Frame(
-    win,
-    bg="#1E293B",
-    bd=2,
-    relief="ridge",
-    highlightthickness=2
-)
-weather_card.pack(pady=15, padx=30, fill="both", expand=True)
-
-# Emoji/Icon
-emoji_label = tk.Label(
-    weather_card,
-    text="☀️",
-    font=("Segoe UI", 80),
-    bg="#1E293B"
-)
-emoji_label.pack(pady=(25, 10))
-
-# City name
-city_name_label = tk.Label(
-    weather_card,
-    text="Karachi, PK",
-    font=("Segoe UI", 24, "bold"),
-    fg="#38BDF8",
-    bg="#1E293B"
-)
-city_name_label.pack(pady=(5, 5))
-
-# Weather description
-description = tk.Label(
-    weather_card,
-    text="Clear Sky",
-    font=("Segoe UI", 14),
-    fg="#E2E8F0",
-    bg="#1E293B"
-)
-description.pack(pady=5)
-
-# Temperature
-temperature = tk.Label(
-    weather_card,
-    text="32.0°C",
-    font=("Segoe UI", 48, "bold"),
-    fg="#FFFFFF",
-    bg="#1E293B"
-)
-temperature.pack(pady=10)
-
-# Feels like temperature
-feels_like_label = tk.Label(
-    weather_card,
-    text="Feels like: 34.2°C",
-    font=("Segoe UI", 11),
-    fg="#94A3B8",
-    bg="#1E293B"
-)
-feels_like_label.pack(pady=5)
-
-# Separator
-separator = tk.Frame(weather_card, height=2, bg="#334155")
-separator.pack(fill="x", padx=40, pady=15)
-
-# Extra information (detailed)
-extra_info = tk.Label(
-    weather_card,
-    text="",
-    font=("Segoe UI", 11),
-    fg="#94A3B8",
-    bg="#1E293B",
-    justify="left"
-)
-extra_info.pack(pady=10, padx=20)
-
-# =========================
-# Footer with Status
-# =========================
-footer_frame = tk.Frame(win, bg="#0F172A")
-footer_frame.pack(side="bottom", fill="x", pady=(10, 0))
-
-# Status bar
-status_bar = tk.Label(
-    footer_frame,
-    text="🟢 Ready • Last updated: --",
-    font=("Segoe UI", 9),
-    fg="#64748B",
-    bg="#0F172A"
-)
-status_bar.pack(side="left", padx=20, pady=5)
-
-# Copyright
-copyright_label = tk.Label(
-    footer_frame,
-    text="Code by Imran • OpenWeather API",
-    font=("Segoe UI", 10, "italic"),
-    fg="#64748B",
-    bg="#0F172A"
-)
-copyright_label.pack(side="right", padx=20, pady=5)
-
-# =========================
-# Auto-load on startup
-# =========================
-def initial_load():
-    """Load initial weather data"""
-    win.after(100, get_weather)
-
-initial_load()
-
-# =========================
-# Run the application
-# =========================
-if __name__ == "__main__":
-    try:
-        win.mainloop()
+        root.mainloop()
     except KeyboardInterrupt:
-        print("\nWeather app closed")
+        print("\nApp closed by user")
+
+if __name__ == "__main__":
+    main()
