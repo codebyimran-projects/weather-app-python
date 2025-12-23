@@ -101,6 +101,3 @@ This project is **open-source**. Feel free to use and modify it for personal pro
 **Muhammad Imran**
 [GitHub](https://github.com/codebyimran-projects)
 
-
-Do you want me to do that?
-```
